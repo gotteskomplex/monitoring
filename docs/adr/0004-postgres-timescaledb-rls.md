@@ -1,6 +1,6 @@
 # ADR-0004: PostgreSQL + TimescaleDB mit erzwungener RLS
 
-**Status:** Vorgeschlagen · **Datum:** 2026-09-27
+**Status:** Angenommen · **Datum:** 2026-09-27
 
 ## Kontext
 Stammdaten, Zustand und Zeitreihen sollen in einer Datenbank liegen; Mandantentrennung muss auch bei Anwendungsfehlern halten.

@@ -1,0 +1,15 @@
+{
+  "app": {
+    "title": "Monitoring",
+    "phaseNotice": "Foundation (phase 1): the user interface follows in phase 4.",
+    "master": "Master",
+    "version": "Version",
+    "protocol": "Protocol version",
+    "schema": "Schema version",
+    "loading": "Loading status …",
+    "unreachable": "Master unreachable"
+  },
+  "language": {
+    "switch": "Deutsch"
+  }
+}

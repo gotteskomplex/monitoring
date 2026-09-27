@@ -1,0 +1,165 @@
+syntax = "proto3";
+
+package monitoring.satellite.v1;
+
+// ConfigSnapshot is the complete configuration of one satellite. It is always
+// sent in full (ADR-0007); version is strictly monotonic per satellite.
+message ConfigSnapshot {
+  int64 version = 1;
+  repeated CheckSpec checks = 2;
+  // Secrets referenced by checks via secret_refs. Only secrets needed by this
+  // satellite are included.
+  map<string, Secret> secrets = 3;
+  AgentSettings settings = 4;
+}
+
+// AgentSettings are runtime limits controlled by the master.
+message AgentSettings {
+  uint32 max_concurrency = 1;
+  uint32 max_concurrency_per_target = 2;
+  uint32 heartbeat_interval_s = 3;
+  uint32 result_batch_max = 4;
+  uint32 result_batch_interval_ms = 5;
+  uint64 buffer_max_bytes = 6;
+  uint32 buffer_max_age_s = 7;
+}
+
+message Secret {
+  oneof value {
+    string text = 1;
+    SnmpV3Credentials snmp_v3 = 2;
+    BasicAuth basic_auth = 3;
+  }
+}
+
+message BasicAuth {
+  string username = 1;
+  string password = 2;
+}
+
+message SnmpV3Credentials {
+  string username = 1;
+  SnmpAuthProtocol auth_protocol = 2;
+  string auth_passphrase = 3;
+  SnmpPrivProtocol priv_protocol = 4;
+  string priv_passphrase = 5;
+  string context_name = 6;
+}
+
+enum SnmpAuthProtocol {
+  SNMP_AUTH_PROTOCOL_UNSPECIFIED = 0;
+  SNMP_AUTH_PROTOCOL_NONE = 1;
+  SNMP_AUTH_PROTOCOL_MD5 = 2;
+  SNMP_AUTH_PROTOCOL_SHA = 3;
+  SNMP_AUTH_PROTOCOL_SHA256 = 4;
+  SNMP_AUTH_PROTOCOL_SHA512 = 5;
+}
+
+enum SnmpPrivProtocol {
+  SNMP_PRIV_PROTOCOL_UNSPECIFIED = 0;
+  SNMP_PRIV_PROTOCOL_NONE = 1;
+  SNMP_PRIV_PROTOCOL_DES = 2;
+  SNMP_PRIV_PROTOCOL_AES = 3;
+  SNMP_PRIV_PROTOCOL_AES256 = 4;
+}
+
+// CheckSpec describes one check the satellite must execute.
+message CheckSpec {
+  string check_id = 1;
+  uint32 interval_s = 2;
+  uint32 timeout_s = 3;
+  // Interval used after a non-OK result until max_attempts is reached (ADR-0009).
+  uint32 retry_interval_s = 4;
+  uint32 max_attempts = 5;
+  // Host name or IP address of the target.
+  string target = 6;
+  // Thresholds are applied statelessly by the satellite to each single result.
+  repeated Threshold thresholds = 7;
+
+  oneof spec {
+    PingSpec ping = 10;
+    TcpSpec tcp = 11;
+    HttpSpec http = 12;
+    DnsSpec dns = 13;
+    SnmpSpec snmp = 14;
+    SelfSpec self = 15;
+  }
+
+  // Keys into ConfigSnapshot.secrets.
+  repeated string secret_refs = 30;
+}
+
+// Threshold maps a metric value to WARNING/CRITICAL using Nagios range syntax
+// (e.g. "100", "10:", "~:20", "@10:20").
+message Threshold {
+  string metric = 1;
+  string warning = 2;
+  string critical = 3;
+}
+
+message PingSpec {
+  uint32 count = 1;
+  uint32 interval_ms = 2;
+  uint32 packet_size = 3;
+}
+
+message TcpSpec {
+  uint32 port = 1;
+  // Optional string to send and expected response prefix.
+  string send = 2;
+  string expect = 3;
+}
+
+message HttpSpec {
+  string url = 1;
+  string method = 2;
+  repeated uint32 expected_status = 3;
+  // Optional content check: plain substring or regular expression.
+  string content_match = 4;
+  bool content_match_is_regex = 5;
+  bool follow_redirects = 6;
+  bool tls_skip_verify = 7;
+  // Warn/crit when the certificate expires within the given number of days (0 = off).
+  uint32 cert_expiry_warning_days = 8;
+  uint32 cert_expiry_critical_days = 9;
+  map<string, string> headers = 10;
+  // Secret key for basic auth (see CheckSpec.secret_refs).
+  string basic_auth_secret_ref = 11;
+}
+
+message DnsSpec {
+  string query = 1;
+  string record_type = 2;
+  // Resolver to use; empty = system resolver.
+  string server = 3;
+  repeated string expected_values = 4;
+}
+
+message SnmpSpec {
+  SnmpVersion version = 1;
+  uint32 port = 2;
+  // Secret key holding the community (v2c) or SnmpV3Credentials (v3).
+  string credentials_secret_ref = 3;
+  repeated SnmpOid oids = 4;
+  // Predefined collection profiles, e.g. "if_traffic", "host_resources".
+  string profile = 5;
+  repeated string interfaces = 6;
+}
+
+enum SnmpVersion {
+  SNMP_VERSION_UNSPECIFIED = 0;
+  SNMP_VERSION_V2C = 1;
+  SNMP_VERSION_V3 = 2;
+}
+
+message SnmpOid {
+  string oid = 1;
+  // Metric name the value is reported as.
+  string metric = 2;
+  string unit = 3;
+  // Treat value as a monotonic counter and report the per-second rate.
+  bool counter = 4;
+}
+
+// SelfSpec collects metrics of the host the satellite runs on.
+message SelfSpec {}

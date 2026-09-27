@@ -1,6 +1,6 @@
 # ADR-0003: Interne zweistufige CA, 90-Tage-Zertifikate, Sperrung per DB
 
-**Status:** Vorgeschlagen · **Datum:** 2026-09-27
+**Status:** Angenommen · **Datum:** 2026-09-27
 
 ## Kontext
 Jeder Satellit braucht eine eigene, rotier- und widerrufbare Identität. Der einzige Prüfer ist der Master.

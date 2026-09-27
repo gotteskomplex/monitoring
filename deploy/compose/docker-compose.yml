@@ -1,0 +1,93 @@
+# Local development environment. NOT for production: fixed dev passwords,
+# self-signed TLS. Start with `make run`, then open https://app.localhost
+# (or http://localhost:8080 directly).
+name: monitoring
+
+x-db-env: &db-env
+  MON_DB_APP_DSN: postgres://mon_app:${MON_DEV_APP_PASSWORD:-dev-app}@postgres:5432/monitoring?sslmode=disable
+  MON_DB_SYSTEM_DSN: postgres://mon_system:${MON_DEV_SYSTEM_PASSWORD:-dev-system}@postgres:5432/monitoring?sslmode=disable
+  MON_DB_MIGRATOR_DSN: postgres://mon_migrator:${MON_DEV_MIGRATOR_PASSWORD:-dev-migrator}@postgres:5432/monitoring?sslmode=disable
+  MON_LOG_LEVEL: debug
+
+services:
+  postgres:
+    image: timescale/timescaledb:2.17.2-pg16
+    environment:
+      POSTGRES_DB: monitoring
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${MON_DEV_SUPERUSER_PASSWORD:-dev-postgres}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d monitoring"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # One-shot: roles + extensions (superuser, idempotent).
+  db-bootstrap:
+    image: monitoring/master:dev
+    build:
+      context: ../..
+      dockerfile: deploy/docker/master.Dockerfile
+    command: ["bootstrap"]
+    environment:
+      MON_DB_SUPERUSER_DSN: postgres://postgres:${MON_DEV_SUPERUSER_PASSWORD:-dev-postgres}@postgres:5432/monitoring?sslmode=disable
+      MON_DB_MIGRATOR_PASSWORD: ${MON_DEV_MIGRATOR_PASSWORD:-dev-migrator}
+      MON_DB_APP_PASSWORD: ${MON_DEV_APP_PASSWORD:-dev-app}
+      MON_DB_SYSTEM_PASSWORD: ${MON_DEV_SYSTEM_PASSWORD:-dev-system}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  # One-shot: schema migrations as mon_migrator.
+  db-migrate:
+    image: monitoring/master:dev
+    command: ["migrate"]
+    environment: *db-env
+    depends_on:
+      db-bootstrap:
+        condition: service_completed_successfully
+    restart: "no"
+
+  master:
+    image: monitoring/master:dev
+    command: ["serve"]
+    environment:
+      <<: *db-env
+      MON_HTTP_ADDR: ":8080"
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      db-migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # app.localhost: TLS terminated by Traefik (self-signed in dev, ACME in prod).
+  # sat.localhost: TLS passthrough (SNI) to the master's gRPC gateway (phase 2),
+  # mTLS is terminated in the master itself (ADR-0002).
+  traefik:
+    image: traefik:v3.5
+    command:
+      - --providers.file.filename=/etc/traefik/dynamic.yml
+      - --entrypoints.web.address=:80
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.websecure.address=:443
+      - --log.level=INFO
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./traefik/dynamic.yml:/etc/traefik/dynamic.yml:ro
+    depends_on:
+      - master
+    restart: unless-stopped
+
+  # The development satellite (auto-enrollment with a seeded token) and demo
+  # targets (nginx, CoreDNS, snmpd, mailpit) are added in phase 2.
+
+volumes:
+  pgdata:

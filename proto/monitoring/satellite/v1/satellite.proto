@@ -1,0 +1,158 @@
+syntax = "proto3";
+
+package monitoring.satellite.v1;
+
+import "google/protobuf/timestamp.proto";
+import "monitoring/satellite/v1/common.proto";
+import "monitoring/satellite/v1/config.proto";
+
+// Current protocol version implemented by this schema. The master supports
+// PROTOCOL_VERSION and PROTOCOL_VERSION - 1 (see docs/ARCHITECTURE.md §5.5).
+// Bump only for behavioural changes; schema changes must stay additive.
+enum ProtocolVersion {
+  PROTOCOL_VERSION_UNSPECIFIED = 0;
+  PROTOCOL_VERSION_1 = 1;
+}
+
+// SatelliteService requires mTLS with a certificate issued by the master CA.
+// Tenant and satellite identity are taken from the certificate only.
+service SatelliteService {
+  // Connect is the long-lived bidirectional stream. The satellite sends a
+  // Hello first; the master answers with HelloAck and then a ConfigSnapshot.
+  rpc Connect(stream ConnectRequest) returns (stream ConnectResponse);
+  // RenewCertificate exchanges a new CSR for a fresh certificate.
+  rpc RenewCertificate(RenewCertificateRequest) returns (RenewCertificateResponse);
+  // DownloadArtifact streams a signed agent release.
+  rpc DownloadArtifact(DownloadArtifactRequest) returns (stream DownloadArtifactResponse);
+}
+
+// ConnectRequest is the envelope for all satellite -> master stream messages.
+message ConnectRequest {
+  oneof body {
+    Hello hello = 1;
+    Heartbeat heartbeat = 2;
+    ResultBatch results = 3;
+    ConfigAck config_ack = 4;
+    CommandResult command_result = 5;
+  }
+}
+
+// ConnectResponse is the envelope for all master -> satellite stream messages.
+message ConnectResponse {
+  oneof body {
+    HelloAck hello_ack = 1;
+    ConfigSnapshot config = 2;
+    BatchAck batch_ack = 3;
+    Command command = 4;
+  }
+}
+
+message Hello {
+  ProtocolVersion protocol_version = 1;
+  string agent_version = 2;
+  string os = 3;
+  string arch = 4;
+  string hostname = 5;
+  // Check types this agent can execute, e.g. ["ping","tcp","http"].
+  repeated string capabilities = 6;
+  // Config version currently applied (0 = none).
+  int64 config_version = 7;
+  google.protobuf.Timestamp satellite_time = 8;
+}
+
+message HelloAck {
+  ProtocolVersion protocol_version = 1;
+  google.protobuf.Timestamp master_time = 2;
+  // Backpressure limits for result delivery.
+  uint32 max_inflight_batches = 3;
+  uint32 max_results_per_second = 4;
+  // Set when the agent is too old; only update commands will follow.
+  bool update_required = 5;
+}
+
+message Heartbeat {
+  google.protobuf.Timestamp satellite_time = 1;
+  int64 config_version = 2;
+  uint64 queue_length = 3;
+  uint64 queue_bytes = 4;
+  // Results dropped due to buffer limits since the agent started.
+  uint64 dropped_results_total = 5;
+  double cpu_percent = 6;
+  uint64 memory_rss_bytes = 7;
+  uint32 active_workers = 8;
+  uint32 scheduled_checks = 9;
+  google.protobuf.Timestamp certificate_not_after = 10;
+}
+
+message ResultBatch {
+  // Monotonic per connection; acknowledged via BatchAck.
+  uint64 seq = 1;
+  repeated CheckResult results = 2;
+  // True while the satellite replays buffered historical results.
+  bool backfill = 3;
+}
+
+message BatchAck {
+  uint64 seq = 1;
+}
+
+message ConfigAck {
+  int64 version = 1;
+  bool ok = 2;
+  repeated CheckConfigError errors = 3;
+}
+
+message CheckConfigError {
+  string check_id = 1;
+  string message = 2;
+}
+
+// Command is a closed set of actions the master may request. There is
+// intentionally no arbitrary command execution (see risk R4).
+message Command {
+  string command_id = 1;
+  oneof action {
+    RunCheckNow run_check_now = 10;
+    UpdateAgent update_agent = 11;
+    RotateCertificate rotate_certificate = 12;
+  }
+}
+
+message RunCheckNow {
+  string check_id = 1;
+}
+
+message UpdateAgent {
+  string version = 1;
+  string artifact_name = 2;
+  bytes sha256 = 3;
+  // Ed25519 signature over the release manifest.
+  bytes signature = 4;
+  bool allow_downgrade = 5;
+}
+
+message RotateCertificate {}
+
+message CommandResult {
+  string command_id = 1;
+  bool ok = 2;
+  string message = 3;
+}
+
+message RenewCertificateRequest {
+  bytes csr_pem = 1;
+}
+
+message RenewCertificateResponse {
+  bytes certificate_pem = 1;
+  bytes ca_chain_pem = 2;
+}
+
+message DownloadArtifactRequest {
+  string artifact_name = 1;
+  uint64 offset = 2;
+}
+
+message DownloadArtifactResponse {
+  bytes chunk = 1;
+}

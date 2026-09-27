@@ -1,0 +1,17 @@
+/bin/
+/coverage.*
+*.test
+*.out
+.env
+.env.local
+
+# Web
+web/node_modules/
+web/dist/
+internal/master/webui/dist/*
+!internal/master/webui/dist/.keep
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store

@@ -1,6 +1,6 @@
 # ADR-0002: gRPC-Bidi-Streaming mit mTLS, im Master terminiert
 
-**Status:** Vorgeschlagen · **Datum:** 2026-09-27
+**Status:** Angenommen · **Datum:** 2026-09-27
 
 ## Kontext
 Satelliten dürfen nur ausgehend verbinden (443). Der Master muss Konfiguration und Befehle jederzeit pushen können. Alternativen: gRPC-Streaming (HTTP/2) oder WebSocket.

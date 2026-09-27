@@ -1,6 +1,6 @@
 # ADR-0007: Konfiguration als versionierter Voll-Snapshot
 
-**Status:** Vorgeschlagen · **Datum:** 2026-09-27
+**Status:** Angenommen · **Datum:** 2026-09-27
 
 ## Kontext
 Konfigurationsänderungen sollen versioniert an Satelliten gehen und bestätigt werden; Verbindungsabbrüche und verlorene Benachrichtigungen dürfen nicht zu Drift führen.

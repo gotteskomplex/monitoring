@@ -1,6 +1,6 @@
 # Architektur: Mandantenfähiges Monitoring-System (Master/Satellit)
 
-> **Status:** Entwurf zur Freigabe. Noch kein Produktivcode.
+> **Status:** Freigegeben am 2026-09-27 (Arbeitsannahmen aus §16 gelten als bestätigt). Phase 1 ist umgesetzt.
 > **Stand:** 2026-09-27
 > Entscheidungen, die schwer rückgängig zu machen sind, stehen zusätzlich als ADR in [`docs/adr/`](adr/).
 > Offene Fragen stehen in [Abschnitt 16](#16-offene-fragen-und-arbeitsannahmen). Bis zur Antwort gelten die dort genannten Arbeitsannahmen.
@@ -348,7 +348,9 @@ sequenceDiagram
 2. Ein expliziter Test: Tenant A kann Daten von B über API und DB weder lesen noch schreiben, auch nicht mit gefälschten IDs in Pfad oder Body.
 3. Ein Protokolltest: Satellit A sendet Ergebnisse mit `check_id` aus Tenant B → verworfen.
 
-**TimescaleDB-Stolperstein:** Continuous Aggregates unterstützen **keine RLS**. Deshalb bekommt `mon_app` keinen direkten Zugriff darauf. Zugriff erfolgt nur über `security_barrier`-Views, die nach `app.tenant_ids` filtern. Das deckt ebenfalls ein Test ab (Risiko R2).
+**TimescaleDB-Stolperstein 1 (in Phase 1 per Test gefunden):** Chunks erben die GRANTs der Hypertable, aber **nicht deren RLS**. Direkte Chunk-Abfragen würden die Mandantentrennung umgehen. Deshalb liegen Hypertables im Schema `ts` ohne Rechte für `mon_app`, und der Zugriff läuft über gleichnamige Views in `public` ([ADR-0010](adr/0010-hypertables-eigenes-schema.md)).
+
+**TimescaleDB-Stolperstein 2:** Continuous Aggregates unterstützen **keine RLS**. Deshalb bekommt `mon_app` keinen direkten Zugriff darauf. Zugriff erfolgt nur über `security_barrier`-Views, die nach `app.tenant_ids` filtern. Das deckt ebenfalls ein Test ab (Risiko R2).
 
 ### 6.3 Benutzer und Authentifizierung
 
@@ -427,7 +429,9 @@ erDiagram
 
 **Vorlagen:** Beim Anwenden werden Checks **materialisiert** (`template_id` bleibt als Verweis). Änderungen an der Vorlage werden als „Vorlage aktualisieren → betroffene Checks neu erzeugen“ ausgerollt, mit Vorschau. Das ist einfacher und nachvollziehbarer als eine Laufzeit-Vererbung.
 
-### 7.2 Zeitreihen (TimescaleDB-Hypertables) ([ADR-0004](adr/0004-postgres-timescaledb-rls.md))
+### 7.2 Zeitreihen (TimescaleDB-Hypertables) ([ADR-0004](adr/0004-postgres-timescaledb-rls.md), [ADR-0010](adr/0010-hypertables-eigenes-schema.md))
+
+Physisch liegen alle Hypertables im Schema `ts`. Die Anwendung sieht sie nur über gleichnamige Views in `public`. Status-Werte in der DB entsprechen den Protobuf-Enum-Werten (1 = OK, 2 = WARNING, 3 = CRITICAL, 4 = UNKNOWN).
 
 | Hypertable | Felder | Chunk / Kompression |
 |---|---|---|
@@ -617,7 +621,7 @@ Kubernetes-fähig durch 12-Factor-Konfiguration (Env), Health-/Readiness-Endpunk
 
 | Bereich | Wahl | Begründung |
 |---|---|---|
-| Sprache Backend + Satellit | Go 1.23+ | Wie vorgeschlagen: statische Binaries, geteilte Proto-Typen, ein Toolchain |
+| Sprache Backend + Satellit | Go 1.25 | Wie vorgeschlagen: statische Binaries, geteilte Proto-Typen, ein Toolchain |
 | RPC | `google.golang.org/grpc` | ausgereifter bidi-Streaming-Support, mTLS, Keepalive |
 | Proto-Tooling | `buf` (lint, breaking, generate) | Rückwärtskompatibilität in der CI erzwingbar |
 | REST | OpenAPI 3.1, `oapi-codegen` (Server), `openapi-typescript` + `openapi-fetch` (Client) | ein Vertrag, typsicher auf beiden Seiten |
@@ -627,7 +631,7 @@ Kubernetes-fähig durch 12-Factor-Konfiguration (Env), Health-/Readiness-Endpunk
 | Satelliten-Puffer | SQLite über `modernc.org/sqlite` | CGO-frei, flexibel, robust bei Stromausfall (WAL) |
 | Checks | `prometheus-community/pro-bing`, `net/http`, `miekg/dns`, `gosnmp/gosnmp` | etabliert, gepflegt |
 | Dienstintegration | `kardianos/service` | systemd + Windows-Dienst mit einer Codebasis |
-| Frontend | React 18 + TypeScript + Vite | wie vorgeschlagen |
+| Frontend | React 19 + TypeScript 5.9 + Vite | wie vorgeschlagen. TypeScript 6/7 erst, wenn typescript-eslint und openapi-typescript es unterstützen |
 | UI-Bibliothek | **Mantine** | sehr vollständig für Admin-UIs (Tabellen, Formulare, Datumsfelder, Benachrichtigungen), gutes Theming für späteres White-Label, kein Tailwind-Zwang |
 | Daten/Routing | TanStack Query + TanStack Router | Caching, Polling für Status, typsichere Routen |
 | Diagramme | **ECharts** | performant bei vielen Punkten, Zoom/`dataZoom`, Zeitachsen |
@@ -682,7 +686,7 @@ Jede Phase endet mit: lauffähigem Code, grünen Tests (inklusive Integrationste
 
 | Phase | Inhalt | Definition of Done |
 |---|---|---|
-| **1 Fundament** | Repo-Struktur, Makefile, CLAUDE.md, CI (lint, test, build), `proto/…/v1` mit `buf lint`/`breaking`, OpenAPI-Grundgerüst, Migrationen: Tenants/Sites/Satelliten/Hosts/Checks/Ergebnisse (Hypertables), DB-Rollen, **RLS + Meta-Test + Isolationstest**, `WithTenantScope`, Compose (Traefik, Timescale, Master-Stub mit `/healthz`, Web-Stub) | `docker compose up` startet, `make test` inklusive Testcontainers grün, RLS-Isolationstest grün |
+| **1 Fundament** ✅ | Repo-Struktur, Makefile, CLAUDE.md, CI (lint, test, build), `proto/…/v1` mit `buf lint`/`breaking`, OpenAPI-Grundgerüst, Migrationen: Tenants/Sites/Satelliten/Hosts/Checks/Ergebnisse (Hypertables), DB-Rollen, **RLS + Meta-Test + Isolationstest**, `WithTenantScope`, Compose (Traefik, Timescale, Master-Stub mit `/healthz`, Web-Stub) | `docker compose up` startet, `make test` inklusive Testcontainers grün, RLS-Isolationstest grün |
 | **2 Satellit-Kern + Gateway** | Interne CA, Enrollment-API, gRPC-Gateway mit mTLS und Zertifikatsprüfung gegen die DB, Hello/Config/Result/Ack, Scheduler mit Jitter, Worker-Pool, Checks Ping/TCP/HTTP, SQLite-Puffer mit Limit, Self-Metriken, Dev-Satellit enrollt sich automatisch | Integrationstest: Satellit enrollt → erhält Config → liefert Ergebnisse → Master bestätigt. Test „Master weg → Puffer → Nachlieferung“. Test „Satellit sendet fremde check_id → abgewiesen“. Benchmark 2.000 Checks/min |
 | **3 Master-Kern** | Ingest per COPY, Dedup, Status-Engine (Soft/Hard, Flapping, Stale, späte Daten), Satelliten-Heartbeat/Offline ⇒ UNKNOWN, Config-Versionierung + Push über NOTIFY + Reconciliation, Continuous Aggregates, Kompression, Prometheus-Metriken | Unit-Tests der Zustandsmaschine (Tabellentests). Lasttest mit synthetischen 50.000 Checks gegen eine Instanz, Engpässe dokumentiert |
 | **4 Web-UI + API Basis** | Login (Passwort), Sessions, **Rollenmodell + Tenant-Scoping**, CRUD Tenants/Sites/Satelliten (Token-Erzeugung, Installationsbefehl)/Hosts/Checks, Statusübersicht, Problemliste über alle Tenants, Host-Detail mit ECharts, i18n DE/EN, Audit-Log schreiben, Sicherheits-Header | E2E-Test (Playwright): Tenant anlegen → Satellit enrollen → Check anlegen → Status sichtbar. API-Isolationstest für alle Endpunkte |
@@ -695,7 +699,7 @@ Jede Phase endet mit: lauffähigem Code, grünen Tests (inklusive Integrationste
 
 ## 16. Offene Fragen und Arbeitsannahmen
 
-Die priorisierten Fragen stehen im Chat bzw. in der Freigabe-Diskussion. Bis zur Antwort gelten diese **Arbeitsannahmen**:
+Mit der Freigabe vom 2026-09-27 („mach es so, wie du denkst“) gelten diese **Arbeitsannahmen als Entscheidungen**. Ändern sie sich, wird ein neues ADR angelegt.
 
 1. **Betriebsmodell:** reiner SaaS-Betrieb durch den MSP. Kein kundenseitiger Master. Eigene VM/Bare-Metal in DE, kein Managed-Postgres eines Hyperscalers.
 2. **Kundennetze:** Ausgehend 443 ist erlaubt. TLS-Inspektion lässt sich per Ausnahme umgehen. Explizite Proxys kommen vereinzelt vor.

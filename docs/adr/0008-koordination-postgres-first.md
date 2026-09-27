@@ -1,6 +1,6 @@
 # ADR-0008: Koordination über PostgreSQL statt NATS in v1
 
-**Status:** Vorgeschlagen · **Datum:** 2026-09-27
+**Status:** Angenommen · **Datum:** 2026-09-27
 
 ## Kontext
 Master-Instanzen sollen zustandslos und später mehrfach betreibbar sein. Config-Pushes müssen die Instanz erreichen, die den Stream eines Satelliten hält; periodische Jobs dürfen nur einmal laufen.

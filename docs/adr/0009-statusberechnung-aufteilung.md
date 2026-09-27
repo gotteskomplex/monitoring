@@ -1,6 +1,6 @@
 # ADR-0009: Aufteilung der Statusberechnung Satellit/Master
 
-**Status:** Vorgeschlagen · **Datum:** 2026-09-27
+**Status:** Angenommen · **Datum:** 2026-09-27
 
 ## Kontext
 Vorgabe: Satellit ist „dumm“ (keine Alarmlogik, keine Schwellwert-Historie), liefert aber Rohergebnisse **plus Status**. Wiederholungen vor Statuswechsel sollen Flapping vermeiden, ohne die Erkennung stark zu verzögern.

@@ -7,23 +7,36 @@ Mandantenfähiges Monitoring-System (Master/Satellit) für einen MSP. Master (EU
 Architektur: `docs/ARCHITECTURE.md` · Entscheidungen: `docs/adr/`
 
 ## Aktueller Stand
-**Planungsphase** – Architektur zur Freigabe vorgelegt, noch kein Produktivcode. Nächster Schritt nach Freigabe: Phase 1 (Fundament).
+**Phase 1 (Fundament) abgeschlossen.** Architektur freigegeben (2026-09-27). Nächster Schritt: Phase 2 (Satellit-Kern + Gateway: CA, Enrollment, gRPC/mTLS, Scheduler, Ping/TCP/HTTP, SQLite-Puffer). Änderungshistorie: `CHANGELOG.md`.
 
-## Befehle (Zielzustand ab Phase 1, noch nicht vorhanden)
+## Befehle
 ```
+make tools        # gepinnte Generatoren + golangci-lint installieren (einmalig)
 make gen          # buf generate, sqlc generate, oapi-codegen, openapi-typescript
-make lint         # golangci-lint, buf lint, eslint, prettier --check
-make test         # go test ./... (Unit) + web: vitest
-make test-int     # Integrationstests mit Testcontainers (Docker erforderlich)
-make build        # Binaries: master, satellite, satellite-launcher (linux amd64/arm64, windows amd64)
-make run          # docker compose -f deploy/compose/docker-compose.yml up --build
-make migrate      # master migrate up
+make check-gen    # schlägt fehl, wenn generierter Code veraltet ist (CI)
+make lint         # golangci-lint, buf lint, eslint, prettier --check, tsc
+make test         # Unit-Tests Go (-race) + web (vitest), ohne Docker
+make test-int     # Integrationstests (build tag "integration", Testcontainers, Docker nötig)
+make build        # bin/master, bin/satellite (Host-Plattform)
+make build-all    # Satellit linux amd64/arm64 + windows amd64, Master linux amd64/arm64
+make web          # Web-UI bauen und nach internal/master/webui/dist kopieren (go:embed)
+make run          # docker compose up --build (Postgres/Timescale, Bootstrap, Migration, Master, Traefik)
 ```
+Lokal: http://localhost:8080 (Master direkt) bzw. https://app.localhost (über Traefik, selbstsigniert).
+Web-Dev-Server: `cd web && npm run dev` (Proxy `/api` → localhost:8080).
+
+## Master-Befehle und Konfiguration (Env, jeweils auch als `NAME_FILE`)
+- `master bootstrap`: Rollen + Extension anlegen (Superuser, idempotent). Braucht `MON_DB_SUPERUSER_DSN` und `MON_DB_{MIGRATOR,APP,SYSTEM}_PASSWORD`.
+- `master migrate`: goose-Migrationen als `mon_migrator` (`MON_DB_MIGRATOR_DSN`).
+- `master serve`: HTTP (`MON_HTTP_ADDR`, Standard `:8080`), `MON_DB_APP_DSN`, optional `MON_DB_SYSTEM_DSN`, `MON_LOG_LEVEL`.
+- `master healthcheck`: Container-Healthcheck (Distroless-Image hat keine Shell).
+- Endpunkte: `/healthz`, `/readyz` (DB + Schemaversion == eingebettete Version), `/metrics`, `/api/v1/*`, `/` (SPA).
 
 ## Verbindliche Regeln
 1. **Mandantentrennung**
    - Tenant-Kontext nur aus Session/API-Token bzw. Satelliten-Zertifikat, **nie** aus Request-Parametern.
-   - DB-Zugriff nur über `store.WithTenantScope`; kein direkter Pool-Zugriff im Request-Pfad.
+   - DB-Zugriff nur über `store.WithTenantScope`; die Pools sind in `store.DB` nicht exportiert. `store.WithSystem` (BYPASSRLS) nur für echte Plattform-Jobs, mit Begründung.
+   - Hypertables liegen im Schema `ts` ohne Rechte für `mon_app`, Zugriff über gleichnamige Views in `public` (ADR-0010). `WithSystem` muss `ts.*` direkt ansprechen. Neue Hypertables: gleiches Muster plus `GRANT … TO mon_system`.
    - Jede neue Mandanten-Tabelle: `tenant_id NOT NULL`, `ENABLE`+`FORCE ROW LEVEL SECURITY`, Policy, zusammengesetzte FKs. Der RLS-Meta-Test muss grün bleiben.
    - Satelliten dürfen nur Ergebnisse für **ihnen zugeordnete** Checks liefern.
 2. **Protokoll** (`proto/monitoring/satellite/v1`): nur additive Änderungen, Feldnummern nie wiederverwenden (`reserved`). `buf breaking` muss grün sein. Master unterstützt Protokollversion N und N-1.
@@ -39,7 +52,10 @@ make migrate      # master migrate up
 - IDs: UUIDv7. Zeiten: UTC, `timestamptz`.
 - SQL über `sqlc`, kein ORM.
 - REST-Vertrag zuerst in `api/openapi.yaml` ändern, dann generieren.
-- Tests: Tabellentests für Kernlogik; Integrationstests mit Testcontainers unter `test/integration`.
+- Tests: Tabellentests für Kernlogik; Integrationstests mit Testcontainers unter `test/integration` (Build-Tag `integration`, Datenbank über `internal/testutil/pgtest`).
+- Sicherheitsrelevante Tests brauchen eine Gegenprobe: einmal prüfen, dass der Test bei entfernter Schutzmaßnahme wirklich fehlschlägt.
+- DB-Statuswerte = Protobuf-Enum-Werte (1 OK, 2 WARNING, 3 CRITICAL, 4 UNKNOWN), nie umnummerieren.
+- Web: React 19, TypeScript **5.9** (6/7 erst, wenn typescript-eslint/openapi-typescript es unterstützen), Texte nur über i18n (`web/src/locales/{de,en}.json`). Der API-Client (`web/src/api/client.ts`) ist aus OpenAPI generiert.
 - Commits: Conventional Commits (`feat:`, `fix:`, `docs:`, …).
 
 ## Kernentscheidungen (Kurzfassung, Details in ADRs)
@@ -52,3 +68,8 @@ make migrate      # master migrate up
 - Config als versionierter Voll-Snapshot (ADR-0007)
 - Koordination über Postgres (LISTEN/NOTIFY, SKIP LOCKED), NATS später (ADR-0008)
 - Statusberechnung: Satellit bewertet Einzelergebnis, Master alles mit Historie (ADR-0009)
+- Hypertables im Schema `ts`, Zugriff nur über Views (Chunks erben keine RLS) (ADR-0010)
+
+## Stolpersteine
+- In der Claude-Code-Cloud-Sandbox scheitern Docker-Builds an `go mod download`/`npm ci` (Proxy-CA im Build nicht vertraut). Zum lokalen Prüfen die Binaries auf dem Host bauen und per Compose-Override ein Minimal-Image verwenden. In CI oder auf normalen Rechnern ist das nicht nötig.
+- Docker-Daemon in der Sandbox ggf. zuerst starten: `dockerd > /tmp/dockerd.log 2>&1 &`.

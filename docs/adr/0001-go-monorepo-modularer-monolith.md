@@ -1,6 +1,6 @@
 # ADR-0001: Go-Monorepo, Master als modularer Monolith
 
-**Status:** Vorgeschlagen · **Datum:** 2026-09-27
+**Status:** Angenommen · **Datum:** 2026-09-27
 
 ## Kontext
 Master und Satellit teilen Protokolltypen. Für v1 genügt eine Master-Instanz (50 Tenants / 100 Satelliten / 50.000 Checks), horizontale Skalierung soll aber möglich bleiben.

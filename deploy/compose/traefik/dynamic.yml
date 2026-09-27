@@ -1,0 +1,26 @@
+http:
+  routers:
+    app:
+      rule: Host(`app.localhost`)
+      entryPoints: [websecure]
+      service: master-http
+      tls: {}
+  services:
+    master-http:
+      loadBalancer:
+        servers:
+          - url: http://master:8080
+
+tcp:
+  routers:
+    satellites:
+      rule: HostSNI(`sat.localhost`)
+      entryPoints: [websecure]
+      service: master-grpc
+      tls:
+        passthrough: true
+  services:
+    master-grpc:
+      loadBalancer:
+        servers:
+          - address: master:8443

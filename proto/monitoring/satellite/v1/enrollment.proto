@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package monitoring.satellite.v1;
+
+// EnrollmentService is reachable WITHOUT a client certificate. It exchanges a
+// one-time enrollment token plus a CSR for a client certificate.
+service EnrollmentService {
+  rpc Enroll(EnrollRequest) returns (EnrollResponse);
+}
+
+message HostInfo {
+  string hostname = 1;
+  string os = 2;
+  string arch = 3;
+  string agent_version = 4;
+}
+
+message EnrollRequest {
+  // One-time token created in the web UI. Never logged.
+  string token = 1;
+  // PEM encoded PKCS#10 certificate signing request. The private key never
+  // leaves the satellite host.
+  bytes csr_pem = 2;
+  HostInfo host = 3;
+}
+
+message EnrollResponse {
+  string satellite_id = 1;
+  string tenant_id = 2;
+  // PEM encoded client certificate.
+  bytes certificate_pem = 3;
+  // PEM encoded CA chain the satellite must pin for the gateway connection.
+  bytes ca_chain_pem = 4;
+  // Gateway address, e.g. "sat.example.eu:443".
+  string gateway_address = 5;
+}

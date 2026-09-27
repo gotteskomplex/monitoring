@@ -1,0 +1,52 @@
+openapi: 3.0.3
+info:
+  title: Monitoring Master API
+  version: 0.1.0
+  description: |
+    REST API of the monitoring master for the web UI and automation.
+    Tenant context is always derived from the session or API token,
+    never from request parameters.
+servers:
+  - url: /api/v1
+paths:
+  /version:
+    get:
+      operationId: getVersion
+      summary: Build and protocol information of the master
+      tags: [system]
+      responses:
+        "200":
+          description: Version information
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VersionInfo"
+components:
+  schemas:
+    VersionInfo:
+      type: object
+      required: [version, commit, buildDate, protocolVersion, schemaVersion]
+      properties:
+        version:
+          type: string
+          example: 0.1.0
+        commit:
+          type: string
+        buildDate:
+          type: string
+        protocolVersion:
+          type: integer
+          description: Satellite protocol version implemented by the master (N; N-1 is also accepted).
+        schemaVersion:
+          type: integer
+          format: int64
+          description: Database migration version embedded in the binary.
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: Stable machine readable error code (translated in the UI).
+        message:
+          type: string

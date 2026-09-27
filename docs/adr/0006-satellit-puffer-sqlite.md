@@ -1,6 +1,6 @@
 # ADR-0006: Satelliten-Puffer in SQLite (CGO-frei)
 
-**Status:** Vorgeschlagen · **Datum:** 2026-09-27
+**Status:** Angenommen · **Datum:** 2026-09-27
 
 ## Kontext
 Der Satellit muss bei Master-Ausfall Ergebnisse puffern und Konfiguration persistent halten; das Binary soll statisch gelinkt sein.

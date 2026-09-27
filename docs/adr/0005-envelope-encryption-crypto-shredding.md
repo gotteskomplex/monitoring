@@ -1,6 +1,6 @@
 # ADR-0005: Envelope Encryption mit DEK pro Tenant
 
-**Status:** Vorgeschlagen · **Datum:** 2026-09-27
+**Status:** Angenommen · **Datum:** 2026-09-27
 
 ## Kontext
 SNMP-Communities, v3-Credentials und HTTP-Auth müssen gespeichert und an Satelliten übertragen werden. Der Schlüssel darf nicht in der DB liegen; Tenant-Löschung soll DSGVO-konform sein.
